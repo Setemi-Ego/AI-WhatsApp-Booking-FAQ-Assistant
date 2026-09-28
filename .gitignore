@@ -1,0 +1,12 @@
+# Secrets and local files never go in this repo
+.env
+.env.*
+*.key
+*.pem
+KEYS*
+*.local.json
+
+# OS and editor clutter
+.DS_Store
+Thumbs.db
+.vscode/

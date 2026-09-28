@@ -1,0 +1,390 @@
+{
+  "name": "WhatsApp FAQ Bot (bakery, Meta Cloud API)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "640c5c3e-45ff-4793-8168-dfb67fbe8210",
+      "name": "Meta Verify (GET)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "0f4c2f7b-e526-41b7-b9da-0ab6a53211c0",
+              "leftValue": "={{ $json.query[\"hub.verify_token\"] }}",
+              "rightValue": "YOUR_VERIFY_TOKEN",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        0
+      ],
+      "id": "83d5018f-a73f-4e94-b5da-e8d6cba0ff10",
+      "name": "Token Matches?"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.query[\"hub.challenge\"] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        448,
+        -96
+      ],
+      "id": "f3067846-3a41-4c59-8d70-4320eea24037",
+      "name": "Return Challenge"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Verification failed",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        448,
+        96
+      ],
+      "id": "a6cc0e8d-e455-4674-bcbd-117d4a5f5ec5",
+      "name": "Reject (403)"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -16,
+        368
+      ],
+      "id": "052b4b75-9492-4d35-afc0-15f26e35b1a1",
+      "name": "Meta Message (POST)"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0d25959d-fb5a-4af3-b511-1b69f2390b0f",
+              "name": "sender_number",
+              "value": "={{ $json.body.entry[0].changes[0].value.messages[0].from }}",
+              "type": "string"
+            },
+            {
+              "id": "8ca3661e-076f-4e77-a142-01a9f006f630",
+              "name": "message_text",
+              "value": "={{ $json.body.entry[0].changes[0].value.messages[0].text.body }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        240,
+        368
+      ],
+      "id": "c89c04a9-a5f1-4ce9-9d21-0defea6906c0",
+      "name": "Extract Message"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f8905df3-a49d-458c-86c3-91e8ba1cd674",
+              "leftValue": "=   {{ $json.message_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "07aa84a2-d048-479a-adfe-72b50f653d5e",
+              "leftValue": "={{ $json.message_text }}",
+              "rightValue": "undefined",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        432,
+        368
+      ],
+      "id": "231329ba-1426-4210-a5ad-358d509bc076",
+      "name": "Has Text?"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "claude-sonnet-5",
+          "mode": "list",
+          "cachedResultName": "claude-sonnet-5"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=   {{ $json.message_text }}"
+            }
+          ]
+        },
+        "options": {
+          "system": "You are a helpful assistant for [Bakery Name], a bakery based in Northampton. Opening hours are 9:00am - 5pm (Sunday to Friday), and 9:00am to 8pm(Saturday). Services offered: Wedding cakes, birthday cakes, custom cakes, classic british dessert like apple crumble, sticky toffee pudding etc. Pricing: Sticky toffee pudding = 5.99GBP, Apple crumble = 6.99GBP, cakes prices will hve to be enquired. If asked something you don't know, tell the customer someone will call them back shortly.  For generic greetings or openers (e.g. \"hi\", \"hello\", \"good evening\") with no specific question, just welcome the customer briefly and ask what they're looking for. Do not list prices, menu items, or opening hours unless the customer specifically asks about pricing, the menu, or hours. Respond ONLY with valid JSON in this exact format, no other text: {\"reply\": \"the message to send the customer\", \"escalate\": true or false, \"reason\": \"short internal note on why, or empty string if not escalating\"}. Set escalate to true if: the customer explicitly asks for a human/to speak to someone/to call them, the enquiry needs custom pricing or a quote, it's a complaint, or you genuinely don't know the answer. Do not wrap your response in markdown code fences or backticks. Return only the raw JSON object, nothing else before or after it."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        656,
+        272
+      ],
+      "id": "6791dd0b-9f96-4893-857e-3a7de0eddd95",
+      "name": "Claude"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "YOUR_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "={{ $('Extract Message').item.json.sender_number }}",
+        "textBody": "=  {{ $json.reply }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1280,
+        480
+      ],
+      "id": "df39bd31-6a85-4263-8bd0-ad7ec358b902",
+      "name": "Send Reply"
+    },
+    {
+      "parameters": {
+        "jsCode": "let raw = $input.item.json.content.find(i => i.type === 'text').text;\nraw = raw.trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();\n\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  parsed = {\n    reply: \"Sorry, I'm having a little trouble right now, someone from our team will get back to you shortly!\",\n    escalate: true,\n    reason: \"AI response failed to parse: \" + raw.substring(0, 200)\n  };\n}\n\nreturn { json: { ...$input.item.json, reply: parsed.reply, escalate: parsed.escalate, reason: parsed.reason, sender_number: $('Extract Message').item.json.sender_number, message_text: $('Extract Message').item.json.message_text } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        272
+      ],
+      "id": "34c68a6f-14ab-4d2e-84a7-a69b74afdf57",
+      "name": "Parse JSON Reply"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8de8426d-9f90-4da7-8f08-4af432da2364",
+              "leftValue": "={{ $json.escalate }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1216,
+        192
+      ],
+      "id": "c28840bf-3087-4d91-997e-7ad1034df49f",
+      "name": "Escalate?"
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "phoneNumberId": "YOUR_PHONE_NUMBER_ID",
+        "recipientPhoneNumber": "YOUR_STAFF_WHATSAPP_NUMBER",
+        "textBody": "={{ 'New enquiry needs a human - ' + $json.reason + '. Customer (' + $json.sender_number + ') said: ' + $json.message_text }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        1440,
+        96
+      ],
+      "id": "0f43caad-c9ff-413c-8765-fe92b0c37be4",
+      "name": "Alert Staff on WhatsApp"
+    }
+  ],
+  "connections": {
+    "Meta Verify (GET)": {
+      "main": [
+        [
+          {
+            "node": "Token Matches?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token Matches?": {
+      "main": [
+        [
+          {
+            "node": "Return Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject (403)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta Message (POST)": {
+      "main": [
+        [
+          {
+            "node": "Extract Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message": {
+      "main": [
+        [
+          {
+            "node": "Has Text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Text?": {
+      "main": [
+        [
+          {
+            "node": "Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON Reply": {
+      "main": [
+        [
+          {
+            "node": "Escalate?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalate?": {
+      "main": [
+        [
+          {
+            "node": "Alert Staff on WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

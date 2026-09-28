@@ -1,0 +1,816 @@
+{
+  "name": "WhatsApp AI Booking Assistant (pub)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-booking",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -784,
+        80
+      ],
+      "id": "2626dcec-93be-404b-94aa-d33f254ce62d",
+      "name": "Twilio Webhook"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.Body }}",
+        "options": {
+          "systemMessage": "=You are a WhatsApp assistant for [Venue Name], a pub in Northampton.\n\nToday's date is {{ $now.setZone('Europe/London').toFormat('cccc, dd LLLL yyyy') }} (Europe/London time). Use this whenever a customer's message contains a relative date or day name (e.g. \"tomorrow\", \"Saturday\", \"in two days\", \"next week Tuesday\") so any date you reference is grounded in today's actual date, not a guess.\n\nTONE: Write like a friendly, professional member of staff texting a guest - warm but not overly casual. Do not use emojis, ever. Do not use more than one exclamation mark per message, and only when it genuinely reads as enthusiastic (e.g. confirming a booking) - never as a default. Keep sentences short and natural, the way a real person texts.\n\nBefore classifying, check the conversation history:\n- If an earlier message in this conversation was classified BOOKING_REQUEST and the booking has not yet been confirmed or declined, treat this new message as a continuation of that same booking - classify it BOOKING_REQUEST even if, on its own, it's just a date, a time, a number of people, a name, or a short reply like \"yes\", \"yes please\", \"go ahead\", \"confirm\", \"sounds good\", \"no\", or \"actually cancel that\". Any of these is very likely the customer answering a question the booking agent just asked, even though it carries no booking details on its own.\n- Only describe the message as \"answering the booking agent's last question\" when it's genuinely short and contentless on its own (yes/no/a bare name/a bare number). If the new message instead contains its own date, time, or party size, treat that as the customer giving or updating those details directly - summarise them as such, and do not describe the message as answering an earlier side-question (like a phone number request) that it doesn't actually address.\nFor every incoming customer message, classify it into exactly one of three categories, then respond according to that category's format:\n\n1. FAQ (opening hours, menu, location, parking, general questions)\n   - Respond with ONLY the natural, friendly answer to send directly to the customer.\n   - Do not include any tags or labels of any kind.\n   - Keep it conversational and brief, like a real staff member texting back. No emojis.\n\n2. BOOKING_REQUEST (customer wants to book a table, reserve, check availability, or is continuing an in-progress booking conversation)\n   - Start your response with the exact word BOOKING_REQUEST on its own line.\n   - On the next line, summarise the FULL state of the booking request using everything said across this whole conversation so far, not just the latest message: date (resolved to an actual date, not left as \"Saturday\"), time, party size, and any other details the customer gave. Clearly state which of date, time, or party size are still missing, if any.\n   - Do not write a customer-facing reply yourself - this gets handed to the booking agent.\n\n3. ESCALATE (complaints, angry customers, requests to speak to a human, anything outside what you can confidently handle, or anything involving a complaint/safety issue)\n   - Start your response with the exact word ESCALATE on its own line.\n   - On the next line, briefly summarise the issue for staff to review.\n\nOnly use FAQ, BOOKING_REQUEST, or ESCALATE - never combine them, never invent other tags. If unsure whether something is a booking or an FAQ, default to FAQ only if you're confident you can answer it fully yourself; otherwise treat it as ESCALATE."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -576,
+        80
+      ],
+      "id": "91d65d58-e1c9-4cea-9c65-3a0b36ce61e6",
+      "name": "Classifier Agent",
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "from": "whatsapp:+14155238886",
+        "to": "={{ $('Twilio Webhook').item.json.body.From }}",
+        "message": "={{ $json.output }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        384,
+        16
+      ],
+      "id": "ac212f87-7921-4bcc-8b80-1ab3455c700c",
+      "name": "Send Booking Reply",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.output }}",
+        "options": {
+          "systemMessage": "=You are the booking assistant for [Venue Name], a pub in Northampton.\n\nToday's date is {{ $now.setZone('Europe/London').toFormat('cccc, dd LLLL yyyy') }} (Europe/London time). All bookings are in Europe/London local time.\n\nYou will receive a summary of a customer's booking request (date, time, party size, and any other details mentioned so far). That summary reflects the WHOLE conversation, not just the latest message, and you also have this conversation's message history available to you - use both together, and never ask again for a detail that has already been given earlier in this conversation.\n\nResolve any relative dates yourself against today's date above (e.g. \"tomorrow\", \"Saturday\", \"in two days\", \"next week Tuesday\") before checking availability or creating an event. If a day name is given with no \"next\", assume the next upcoming occurrence of that day. Always base the year on today's date above, never on the example year used elsewhere in this prompt or on any date from your own training - if the customer names a day/month with no year, use the current year unless that date has already passed this year, in which case roll forward to next year.\n\nIf the customer gives a time with no am/pm (e.g. \"1\", \"1:00\", \"7 o'clock\"), use sensible judgement for a pub booking - hours from about 11 through 11 with no \"am\" or \"morning\" attached should be read as midday through late evening, not the middle of the night. Never confirm a booking time between midnight and 10am unless the customer explicitly said \"am\" or \"morning\" - if it's genuinely ambiguous, ask them to confirm which they meant instead of guessing.\n\nTONE: Write like a friendly, professional host texting a guest - warm but not overly casual. Do not use emojis, ever. Do not use more than one exclamation mark per message. Keep replies short and conversational - this is WhatsApp, not email. One or two sentences is usually enough.\n\nWhen you state or confirm a date to the customer, always include the year, e.g. \"Wednesday 16 September 2026\", not just \"Wednesday 16 September\" - this makes any date mistake immediately obvious.\n\nThe customer's WhatsApp number is always already known automatically from the conversation - never ask them for their phone or WhatsApp number, under any circumstances. If the customer asks whether you need their number, tell them you already have it from WhatsApp and don't need to ask for it - do not request it even then.\n\nIf the customer sends new date, time, or party size details partway through a conversation, treat those as replacing any earlier values for the same booking - don't get stuck responding to an earlier side-question (like the phone number) once the customer has clearly moved on to giving fresh booking details. Keep using the customer's name from earlier in the conversation if you already have it; never ask for it again.\n\nSteps to follow:\n1. You need FOUR things before you can book anything: date, time, party size, and the customer's name. If any of these is missing, ask a single short follow-up question for exactly what's missing - never guess or invent a placeholder, and never ask again for something already given.\n2. Once you have all four, use the \"check availability\" tool to see if the requested date and time is free.\n3. If available, do NOT book yet. First summarise the full booking back to the customer - name, date (with year), time, and party size - and ask them to confirm, e.g. \"Shall I go ahead and book that?\" Wait for a clear yes before doing anything else.\n4. Once the customer confirms:\n   - Use the \"create booking\" tool to add the event to the calendar. Set the start and end time to match the requested slot (assume bookings are 2 hours long unless stated otherwise), as ISO 8601 datetime strings that always include the UK UTC offset explicitly - use +01:00 (British Summer Time) for dates between late March and late October, and +00:00 (GMT) for dates outside that range. For example 2026-09-04T21:00:00+01:00, never 2026-09-04T21:00:00 with no offset. This applies to every tool call - check availability, create booking, and log reminder alike. Never send a bare datetime with no offset - the calendar account's own default timezone cannot be relied on to interpret it correctly.\n   - Immediately after the create-booking tool call succeeds, use the \"log reminder\" tool to record the booking for an automatic reminder. Use the exact same start time you just used for the create-booking tool call, and the party size.\n   - Only after both tool calls have succeeded, send a final confirmation message to the customer with the date, time, and party size.\n5. If NOT available:\n   - Do not create any event.\n   - Offer 1-2 nearby alternative times if the calendar tool shows any open slots close to their request.\n\nOnly respond with the exact message to send to the customer. Do not include any tags, labels, or explanations outside of the reply itself.\n\nIf a tool call fails or returns an error, do not retry more than once. If you still can't get a clear answer, apologise to the customer and ask them to confirm their preferred date/time again, or tell them a staff member will follow up."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "cc7addbc-676f-45b9-b15c-66be986d1a40",
+      "name": "Booking Agent",
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "from": "=whatsapp:+14155238886",
+        "to": "={{ $('Twilio Webhook').item.json.body.From }}",
+        "message": "={{ $json.output }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -336,
+        432
+      ],
+      "id": "c3752364-22f3-42a7-8c95-6ef87a060d8e",
+      "name": "Send FAQ Reply"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "823b3e56-221e-4d62-9e54-3def07c99b4f",
+                    "leftValue": "={{ $json.output.includes(\"BOOKING_REQUEST\") }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "b728be77-3fa7-4b3c-9d52-26939f012523",
+                    "leftValue": "={{ $json.output.includes(\"ESCALATE\") }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -256,
+        96
+      ],
+      "id": "1223fc0e-06dd-4e98-9273-9ab9635c5c4c",
+      "name": "Route by Intent"
+    },
+    {
+      "parameters": {
+        "resource": "calendar",
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_CALENDAR_ID"
+        },
+        "timeMin": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Start_Time', ``, 'string') }}",
+        "timeMax": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('End_Time', ``, 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        512,
+        432
+      ],
+      "id": "e3808acd-213f-489e-af3c-d704cd65c69f",
+      "name": "check availability"
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_CALENDAR_ID"
+        },
+        "start": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Start', ``, 'string') }}",
+        "end": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('End', ``, 'string') }}",
+        "additionalFields": {
+          "description": "=={{ 'Booked via WhatsApp (' + $('Twilio Webhook').item.json.body.From + '). ' + $fromAI('Description', 'Any extra notes the customer gave', 'string') }}",
+          "summary": "=={{ 'Table for ' + $fromAI('Party_Size', 'Number of people in the booking', 'number') + ' - ' + $fromAI('Customer_Name', \"Customer's name as given in the conversation\", 'string') + ' - ' + $('Twilio Webhook').item.json.body.From }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        368,
+        448
+      ],
+      "id": "832b5bd5-46bc-4f5b-9294-03b75eec5b3b",
+      "name": "create booking"
+    },
+    {
+      "parameters": {
+        "sendTo": "staff@example.com",
+        "subject": "={{ \"WhatsApp escalation - \" + $('Twilio Webhook').item.json.body.From }}",
+        "emailType": "text",
+        "message": "=A customer needs attention.    From: {{ $('Twilio Webhook').item.json.body.From }}   Message: {{ $('Twilio Webhook').item.json.body.Body }}    AI summary: {{ $json.output }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -112,
+        592
+      ],
+      "id": "172b18a8-0fd6-42f5-b9d3-0054ee1b51e5",
+      "name": "Email Staff: Escalation"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.body.From }}",
+        "contextWindowLength": 20
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        -576,
+        480
+      ],
+      "id": "3da52862-3d16-491c-9ae5-0d77d2ebbd37",
+      "name": "Classifier Memory"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Twilio Webhook').item.json.body.From }}",
+        "contextWindowLength": 20
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        128,
+        336
+      ],
+      "id": "57ff5545-4cef-4024-95fc-d070a737802a",
+      "name": "Booking Memory"
+    },
+    {
+      "parameters": {
+        "from": "=whatsapp:+14155238886",
+        "to": "={{ $('Twilio Webhook').item.json.body.From }}",
+        "message": "Thanks for the message - I've passed this on to the team and someone will get back to you shortly.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        96,
+        576
+      ],
+      "id": "20440f99-422e-48d0-ad42-60b11fd67225",
+      "name": "Acknowledge Escalation"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -784,
+        880
+      ],
+      "id": "d76ff8a8-5ddc-4489-947a-49389d1c95d1",
+      "name": "Every 15 Minutes"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_DATA_TABLE_ID",
+          "cachedResultName": "booking_reminders"
+        }
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        880
+      ],
+      "id": "9c52eb2b-adba-429a-92c6-5dff829403bb",
+      "name": "Get All Reminder Rows"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d1a1f111-1111-4111-8111-111111111111",
+              "leftValue": "={{ $json.reminder_sent }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "d1a1f222-2222-4222-8222-222222222222",
+              "leftValue": "={{ DateTime.fromISO($json.booking_time) }}",
+              "rightValue": "={{ $now }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "after"
+              }
+            },
+            {
+              "id": "d1a1f333-3333-4333-8333-333333333333",
+              "leftValue": "={{ DateTime.fromISO($json.booking_time) }}",
+              "rightValue": "={{ $now.plus({ hours: 8 }) }}",
+              "operator": {
+                "type": "dateTime",
+                "operation": "beforeOrEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -336,
+        880
+      ],
+      "id": "825b1396-b2e9-4b35-8838-ce9b0bed9ed0",
+      "name": "Due For Reminder"
+    },
+    {
+      "parameters": {
+        "from": "whatsapp:+14155238886",
+        "to": "={{ $json.phone }}",
+        "message": "={{ 'Hi! Just a reminder — your table for ' + $json.party_size + ' at [Venue Name] is booked for ' + DateTime.fromISO($json.booking_time).setZone('Europe/London').toFormat('h:mma, cccc d LLLL yyyy') + '. See you soon!' }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -112,
+        880
+      ],
+      "id": "74f690aa-5a3b-4fbc-b2ba-6d6158882ea6",
+      "name": "Send Reminder"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_DATA_TABLE_ID",
+          "cachedResultName": "booking_reminders"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "phone",
+              "keyValue": "={{ $json.phone }}"
+            },
+            {
+              "keyName": "booking_time",
+              "keyValue": "={{ $json.booking_time }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "party_size": "=",
+            "booking_time": "=",
+            "reminder_sent": "true"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "booking_time",
+              "displayName": "booking_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "party_size",
+              "displayName": "party_size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reminder_sent",
+              "displayName": "reminder_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        112,
+        880
+      ],
+      "id": "64c910d4-cf02-4d48-89ba-910f76204ec6",
+      "name": "Mark Reminder Sent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-6",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        -720,
+        288
+      ],
+      "id": "7d5f40c1-a4c8-4c43-8c46-297a548062b8",
+      "name": "Claude (Classifier)"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "claude-sonnet-4-6",
+          "cachedResultName": "Claude Sonnet 4.6"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        224
+      ],
+      "id": "a3ea5bd7-07e6-498e-bee0-71cd4b4b6f6c",
+      "name": "Claude (Booking)"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_DATA_TABLE_ID",
+          "cachedResultName": "booking_reminders"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "phone": "=={{ $('Twilio Webhook').item.json.body.From }}",
+            "booking_time": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('booking_time', ``, 'string') }}",
+            "party_size": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('party_size', ``, 'string') }}",
+            "reminder_sent": "false"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "booking_time",
+              "displayName": "booking_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "party_size",
+              "displayName": "party_size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "reminder_sent",
+              "displayName": "reminder_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTableTool",
+      "typeVersion": 1.1,
+      "position": [
+        272,
+        400
+      ],
+      "id": "b872bc19-3385-4770-9070-aa4b5ab575b6",
+      "name": "log reminder"
+    },
+    {
+      "parameters": {
+        "from": "whatsapp:+14155238886",
+        "to": "={{ $('Twilio Webhook').item.json.body.From }}",
+        "message": "Sorry, I'm having a little trouble right now - someone from the team will follow up shortly.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -304,
+        -32
+      ],
+      "id": "963d14de-d996-4e92-aa23-fb4b86da845f",
+      "name": "Send Holding Message"
+    },
+    {
+      "parameters": {
+        "sendTo": "staff@example.com",
+        "subject": "=AI agent error - {{ $('Twilio Webhook').item.json.body.From }}",
+        "message": "==The AI agent failed after retrying and the customer was sent a holding message - please follow up directly.\n\nFrom: {{ $('Twilio Webhook').item.json.body.From }}, Customer message: {{ $('Twilio Webhook').item.json.body.Body }}, Error: {{ $json.error?.message || $json.error || 'Unknown error' }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        320,
+        -128
+      ],
+      "id": "4506423c-c81c-4674-a6d4-7cd5248bb299",
+      "name": "Email Staff: AI Error"
+    }
+  ],
+  "connections": {
+    "Twilio Webhook": {
+      "main": [
+        [
+          {
+            "node": "Classifier Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classifier Agent": {
+      "main": [
+        [
+          {
+            "node": "Route by Intent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Holding Message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Staff: AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking Agent": {
+      "main": [
+        [
+          {
+            "node": "Send Booking Reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Holding Message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Staff: AI Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Intent": {
+      "main": [
+        [
+          {
+            "node": "Booking Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email Staff: Escalation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Acknowledge Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send FAQ Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check availability": {
+      "ai_tool": [
+        [
+          {
+            "node": "Booking Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create booking": {
+      "ai_tool": [
+        [
+          {
+            "node": "Booking Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classifier Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Classifier Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Booking Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get All Reminder Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Reminder Rows": {
+      "main": [
+        [
+          {
+            "node": "Due For Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Due For Reminder": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder": {
+      "main": [
+        [
+          {
+            "node": "Mark Reminder Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude (Classifier)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Classifier Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude (Booking)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Booking Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log reminder": {
+      "ai_tool": [
+        [
+          {
+            "node": "Booking Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
